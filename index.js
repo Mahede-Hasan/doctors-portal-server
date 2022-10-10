@@ -2,7 +2,7 @@ const express = require('express');
 const cors = require('cors');
 const jwt = require('jsonwebtoken');
 require('dotenv').config();
-const { MongoClient, ServerApiVersion } = require('mongodb');
+const { MongoClient, ServerApiVersion, ObjectId } = require('mongodb');
 const app = express();
 const port = process.env.PORT || 5000;
 
@@ -16,22 +16,22 @@ const client = new MongoClient(uri, { useNewUrlParser: true, useUnifiedTopology:
 function verifyJWT(req, res, next) {
     const authHeader = req.headers.authorization;
     if (!authHeader) {
-      return res.status(401).send({ message: 'UnAuthorized access' });
+        return res.status(401).send({ message: 'UnAuthorized access' });
     }
     const token = authHeader.split(' ')[1];
     jwt.verify(token, process.env.ACCESS_TOKEN_SECRET, function (err, decoded) {
-      if (err) {
-        return res.status(403).send({ message: 'Forbidden access' })
-      }
-      req.decoded = decoded;
-      next();
+        if (err) {
+            return res.status(403).send({ message: 'Forbidden access' })
+        }
+        req.decoded = decoded;
+        next();
     });
-  }
+}
 
 async function run() {
     try {
         await client.connect();
-        const serviceCollection = client.db('doctors-service').collection('treatmentService');
+        const serviceCollection = client.db('doctors-service').collection('treatmentServices');
         const bookingCollection = client.db('doctors-service').collection('booking');
         const userCollection = client.db('doctors-service').collection('users');
         const doctorCollection = client.db('doctors-service').collection('doctors');
@@ -40,12 +40,12 @@ async function run() {
             const requester = req.decoded.email;
             const requesterAccount = await userCollection.findOne({ email: requester });
             if (requesterAccount.role === 'admin') {
-              next();
+                next();
             }
             else {
-              res.status(403).send({ message: 'forbidden' });
+                res.status(403).send({ message: 'forbidden' });
             }
-          }
+        }
 
         app.get('/service', async (req, res) => {
             const query = {};
@@ -80,7 +80,7 @@ async function run() {
                 $set: user
             };
             const result = await userCollection.updateOne(filter, updateDoc, options);
-            const token = jwt.sign({ email: email }, process.env.ACCESS_TOKEN_SECRET, { expiresIn: '1h' })
+            const token = jwt.sign({ email: email }, process.env.ACCESS_TOKEN_SECRET, { expiresIn: '2d' })
             res.send({ result, token });
         })
 
@@ -91,7 +91,6 @@ async function run() {
             const query = { date: date }
             const bookings = await bookingCollection.find(query).toArray();
             const services = await serviceCollection.find().toArray();
-
             services.forEach(service => {
                 const serviceBookings = bookings.filter(book => book.treatment === service.name);
                 const bookSlot = serviceBookings.map(book => book.slot)
@@ -114,6 +113,13 @@ async function run() {
             }
         })
 
+        app.get('/booking/:id', verifyJWT, async (req, res) => {
+            const id = req.params.id;
+            const query = { _id: ObjectId(id) };
+            const booking = await bookingCollection.findOne(query);
+            res.send(booking)
+        })
+
         app.get('/user', verifyJWT, async (req, res) => {
             const users = await userCollection.find().toArray();
             res.send(users);
@@ -130,10 +136,10 @@ async function run() {
             return res.send({ success: true, result });
         })
 
-        app.get('/doctor', async(req, res) =>{
+        app.get('/doctor', async (req, res) => {
             const doctors = await doctorCollection.find().toArray();
             res.send(doctors);
-          })
+        })
 
         app.post('/doctor', async (req, res) => {
             const doctor = req.body;
@@ -143,7 +149,7 @@ async function run() {
 
         app.delete('/doctor/:email', async (req, res) => {
             const email = req.params.email;
-            const filter = {email: email}
+            const filter = { email: email }
             const result = await doctorCollection.deleteOne(filter);
             res.send(result);
         })
